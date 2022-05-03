@@ -99,14 +99,12 @@ namespace Bank
       };
 
       when(src, dst) << [log](acquired_cown<Account> src, acquired_cown<Account> dst) {
-        UNUSED(src);
-        UNUSED(dst);
+        UNUSED(src); UNUSED(dst);
         when(log) << [](acquired_cown<Log> log) { *log << "transfer" << std::endl; };
       };
 
       when(src, dst) << [log](acquired_cown<Account> src, acquired_cown<Account> dst) {
-        UNUSED(src);
-        UNUSED(dst);
+        UNUSED(src); UNUSED(dst);
         when(log) << [](acquired_cown<Log> log) {
           std::string s1;
           std::string s2;
