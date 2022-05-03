@@ -79,12 +79,12 @@ namespace Bank
   }
 
   namespace OrderingLogging {
-    using logger::Log;
+    using Log = std::stringstream;
 
     void run() {
       cown_ptr<Account> src = make_cown<Account>(0);
       cown_ptr<Account> dst = make_cown<Account>(0);
-      cown_ptr<Log> log = make_cown<Log>(std::cout);
+      cown_ptr<Log> log = make_cown<Log>();
 
       when(log) << [](acquired_cown<Log> log) { *log << "begin" << std::endl; };
 
@@ -102,6 +102,24 @@ namespace Bank
         UNUSED(src);
         UNUSED(dst);
         when(log) << [](acquired_cown<Log> log) { *log << "transfer" << std::endl; };
+      };
+
+      when(src, dst) << [log](acquired_cown<Account> src, acquired_cown<Account> dst) {
+        UNUSED(src);
+        UNUSED(dst);
+        when(log) << [](acquired_cown<Log> log) {
+          std::string s1;
+          std::string s2;
+
+          *log >> s1;
+          check(s1 == "begin");
+
+          *log >> s1; *log >> s2;
+          check((s1 == "deposit" && s2 == "freeze") || (s1 == "freeze" && s2 == "deposit"));
+
+          *log >> s1;
+          check(s1 == "transfer")
+        };
       };
     }
   }
