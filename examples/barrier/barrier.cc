@@ -4,7 +4,7 @@
 #include <test/harness.h>
 #include <cpp/when.h>
 
-namespace Test1 {
+namespace UsingOrdering {
 struct Participant
 {
   int count;
@@ -43,8 +43,8 @@ void run()
 }
 }
 
-namespace Test2 {
-  /*
+namespace UsingDataflow {
+/*
  * Construct a barrier example using data flow:
  *   - A barrier structure is used to co-locate participants until all are ready to perform the next step
  *   - Participants are capture by behaviours, operated on and then added to a barrier structure
@@ -138,6 +138,6 @@ void run()
 int main(int argc, char** argv)
 {
   SystematicTestHarness harness(argc, argv);
-  harness.run(Test1::run);
-  harness.run(Test2::run);
+  harness.run(UsingOrdering::run);
+  harness.run(UsingDataflow::run);
 }
