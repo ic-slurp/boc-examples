@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 #include <memory>
 #include <test/harness.h>
-#include <test/log.h>
 #include <cpp/when.h>
 
 namespace Bank
@@ -106,8 +105,7 @@ namespace Bank
       when(src, dst) << [log](acquired_cown<Account> src, acquired_cown<Account> dst) {
         UNUSED(src); UNUSED(dst);
         when(log) << [](acquired_cown<Log> log) {
-          std::string s1;
-          std::string s2;
+          std::string s1, s2;
 
           *log >> s1;
           check(s1 == "begin");
