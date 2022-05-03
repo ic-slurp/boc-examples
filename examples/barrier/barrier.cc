@@ -77,16 +77,16 @@ struct Barrier
   static void wait(cown_ptr<Barrier> barrier, std::unique_ptr<Participant> p, Next pnext, Check pcheck) {
 
     when(barrier) << [p = std::move(p), barrier, pnext, pcheck](acquired_cown<Barrier> b) mutable {
-      b->participants.emplace_back(std::move(p));
+      b->participants.push_back(std::move(p));
       if (--b->count == 0) {
         for(const auto& p: b->participants)
           pcheck(p);
 
-        auto it = b->participants.begin();
-        while (it != b->participants.end()) {
-          pnext(barrier, std::move(*it));
-          it = b->participants.erase(it);
+        while (!b->participants.empty()) {
+          pnext(barrier, std::move(b->participants.back()));
+          b->participants.pop_back();
         }
+
         b->count = b->reset;
       }
     };
@@ -94,19 +94,15 @@ struct Barrier
   }
 };
 
-struct Ephemeral {};
-
 void Participant::begin(cown_ptr<Barrier> barrier, std::unique_ptr<Participant> p) {
-  when(make_cown<Ephemeral>()) << [barrier, p = std::move(p)](acquired_cown<Ephemeral> e) mutable {
-    UNUSED(e);
+  when() << [barrier, p = std::move(p)]() mutable {
     p->count--;
     Barrier::wait(barrier, std::move(p), Participant::mid, Participant::mid_check);
   };
 }
 
 void Participant::mid(cown_ptr<Barrier> barrier, std::unique_ptr<Participant> p) {
-  when(make_cown<Ephemeral>()) << [barrier, p = std::move(p)](acquired_cown<Ephemeral> e) mutable {
-    UNUSED(e);
+  when() << [barrier, p = std::move(p)]() mutable {
     p->count++;
     Barrier::wait(barrier, std::move(p), Participant::end, Participant::end_check);
   };
