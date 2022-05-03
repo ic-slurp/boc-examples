@@ -31,7 +31,7 @@ namespace Fib {
     }
   }
 
-  void test()
+  void run()
   {
     verona::rt::schedule_lambda([](){
       when(Fib::parallel(1)) << [](acquired_cown<int> result) { check(*result == 1); };
@@ -44,5 +44,5 @@ namespace Fib {
 int main(int argc, char** argv)
 {
   SystematicTestHarness harness(argc, argv);
-  harness.run(Fib::test);
+  harness.run(Fib::run);
 }
