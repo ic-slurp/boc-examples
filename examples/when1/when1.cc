@@ -7,7 +7,7 @@ struct E {};
 
 void test_body()
 {
-    cown_ptr<E> a = make_cown<E>({});
+    cown_ptr<E> a = make_cown<E>();
     when (a) << [](acquired_cown<E>) {};
 }
 
