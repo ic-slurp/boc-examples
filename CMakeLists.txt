@@ -15,3 +15,8 @@ foreach(EXAMPLE ${EXAMPLES})
   add_executable(${EXAMPLE} ${SRC})
   target_link_libraries(${EXAMPLE} verona_rt)
 endforeach()
+
+unset(SRC)
+aux_source_directory(verona/src/rt/test/perf/dining_phil/ SRC)
+add_executable(benchmark ${SRC})
+target_link_libraries(benchmark verona_rt)
