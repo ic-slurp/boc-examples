@@ -35,12 +35,13 @@ namespace Bank
   namespace SchedulingWork {
     /*
      * - 'when' must be used to access the contents of a cown.
-     * - 'when' takes a list of required cowns and a closure which must have the associated
-     *   cown parameters, the cown arguments will be provided when the behaviour is dispatched.
+     * - 'when' requires the cowns to access and a closure.
      * - The contents of a required cown_ptr<T> is accessible through an acquired_cown<T>
-     *   inside the closure.
+     *   inside the closure (a required argument of the closure).
      * - When the cowns are availble, the behaviour will be dispatched.
+     * - A most one behaviour can access a cown at a time.
      * - The closure should only capture isolated data.
+     * - The behaviour executes as if the cown is held until termination of the behaviour.
      *
      * - The following transfer spawns two independent behaviours that require src and dst,
      *   these behaviours may execute in either order or concurrently.
@@ -73,6 +74,14 @@ namespace Bank
   }
 
   namespace AtomicTransfer {
+    /*
+     * - A when that requires multiple cowns will be spawned once all cowns are available.
+     * - This is free of deadlock.
+     * - The behaviour has access to the contents of all required cowns.
+     *
+     * - This transfer is atomic, the behaviour is able to update both accounts as one
+     *   operation and no other operations on src or dst can be interleaved.
+     */
     void transfer(cown_ptr<Account> src, cown_ptr<Account> dst, int amount) {
       when(src, dst) << [amount](acquired_cown<Account> src, acquired_cown<Account> dst) {
         if (src->balance >= amount && !src->frozen && !dst->frozen) {
@@ -86,11 +95,15 @@ namespace Bank
       cown_ptr<Account> src = make_cown<Account>(100);
       cown_ptr<Account> dst = make_cown<Account>(0);
 
-      transfer(src, dst, 50);
+      // empty whens to create asynchronous tasks
+      when() << [src, dst]() { transfer(src, dst, 50); };
 
-      when(src, dst) << [](acquired_cown<Account> src, acquired_cown<Account> dst) {
-        check(src->balance == 50);
-        check(dst->balance == 50);
+      when() << [src, dst]() {
+        // check we have all or nothing, we never read a partial transfer
+        when(src, dst) << [](acquired_cown<Account> src, acquired_cown<Account> dst) {
+          check((src->balance == 50 && dst->balance == 50) ||
+                (src->balance == 100 && dst->balance == 0));
+        };
       };
     }
   }
