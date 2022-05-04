@@ -6,6 +6,12 @@
 
 namespace Bank
 {
+  /*
+   * A collection of illustrative examples for:
+   * - creating and accessing cowns
+   * - spawning behaviours behaviours using 'when'
+   */
+
   struct Account {
     int balance;
     bool frozen;
@@ -14,6 +20,12 @@ namespace Bank
   };
 
   namespace AccessViolation {
+    /*
+     * - A cown with contents T is constructed with make_cown<T>.
+     * - This either constructs a T in place or constructs a cown from a T value,
+     *   returning a cown_ptr<T>.
+     * - The cown_ptr<T> cannot be directly dereferenced to access the contents.
+     */
     void run() {
       cown_ptr<Account> account = make_cown<Account>(100);
       // account->amount -= 100; illegal access of cown state
@@ -21,6 +33,18 @@ namespace Bank
   }
 
   namespace SchedulingWork {
+    /*
+     * - 'when' must be used to access the contents of a cown.
+     * - 'when' takes a list of required cowns and a closure which must have the associated
+     *   cown parameters, the cown arguments will be provided when the behaviour is dispatched.
+     * - The contents of a required cown_ptr<T> is accessible through an acquired_cown<T>
+     *   inside the closure.
+     * - When the cowns are availble, the behaviour will be dispatched.
+     * - The closure should only capture isolated data.
+     *
+     * - The following transfer spawns two independent behaviours that require src and dst,
+     *   these behaviours may execute in either order or concurrently.
+     */
     void transfer(cown_ptr<Account> src, cown_ptr<Account> dst, int amount) {
       when(src) << [amount](acquired_cown<Account> src) { src->balance -= amount; };
       when(dst) << [amount](acquired_cown<Account> dst) { dst->balance += amount; };
@@ -28,10 +52,22 @@ namespace Bank
   }
 
   namespace NestingBehaviours {
+    /*
+     * - Behaviours can be spawned within behaviours.
+     * - The spawned behaviour will execute independently and does not have access
+     *   to the cowns acquired by the spawning behaviour.
+     * - The spawning behaviour does not wait for the spawned behaviour to execute.
+     *
+     * - In this transfer, the deposit into dst is only spawned if src has enough funds.
+     * - After spawning the deposit, the withdraw behaviour terminates.
+     * - The deposit does not have access to src.
+     */
     void transfer(cown_ptr<Account> src, cown_ptr<Account> dst, int amount) {
       when(src) << [dst, amount](acquired_cown<Account> src) {
-        src->balance -= amount;
-        when(dst) << [amount](acquired_cown<Account> dst) { dst->balance += amount; };
+        if (src->balance >= amount) {
+          src->balance -= amount;
+          when(dst) << [amount](acquired_cown<Account> dst) { dst->balance += amount; };
+        }
       };
     }
   }
