@@ -109,6 +109,18 @@ namespace Bank
   }
 
   namespace OrderingOperations {
+    /*
+     * - Behaviours are dispatched according to an implicit happens before order.
+     * - The transfer and freeze may execute concurrently but they complete before the transfer
+     *   is dispatched.
+     * - A behaviour b will happen before another behaviour b' iff:
+     *   - b and b' require overlapping cown sets and there exists a behaviour b0 that spawned b and
+     *     subsequently transitively spawned b', or
+     *   - b and b' require overlapping cown sets, and there exists a behaviour b1 that spawned b, and
+     *     there exists a behaviour b2 that transitively spawned b', and b1 happens before b2
+     *
+     * - Therefore these is only one possible final outcome.
+     */
     void run() {
       cown_ptr<Account> src = make_cown<Account>(0);
       cown_ptr<Account> dst = make_cown<Account>(0);
@@ -129,6 +141,13 @@ namespace Bank
   namespace OrderingLogging {
     using Log = std::stringstream;
 
+    /*
+     * - The happens before order extends to nested behaviours.
+     *
+     * - There are only two possible logs that can be constructed:
+     *   - begin, deposit, freeze, transfer or
+     *   - begin, freeze, deposit, transfer
+     */
     void run() {
       cown_ptr<Account> src = make_cown<Account>(0);
       cown_ptr<Account> dst = make_cown<Account>(0);
@@ -163,7 +182,7 @@ namespace Bank
           check((s1 == "deposit" && s2 == "freeze") || (s1 == "freeze" && s2 == "deposit"));
 
           *log >> s1;
-          check(s1 == "transfer")
+          check(s1 == "transfer");
         };
       };
     }
