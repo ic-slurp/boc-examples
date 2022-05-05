@@ -1,7 +1,9 @@
 # Building
 The examples and benchmark are built as follows:
 ```
-> cmake -G Ninja .
+> mkdir build
+> cd build
+> cmake -G Ninja ../
 > ninja
 ```
 
@@ -19,7 +21,7 @@ Each BoC example can be found in `examples/<example>/<example>.cc` and are used 
 For example:
 ```
 > cat examples/bank/bank.cc
-> ./bank
+> ./build/bank
 ```
 
 # Behaviour-Oriented Concurrency Benchmark
@@ -29,10 +31,18 @@ The dining philosophers benchmark can be found in `verona/src/rt/test/perf/dinin
 
 Run the benchmark using combinations of the following options:
 ```
-> ./benchmark
+> ./build/benchmark
   --hunger <HUNGER>                       # Number of times for a philosopher to eat
   --num_philosophers <NUM_PHILOSOPHERS>   # Number of philosophers
   --optimal_order                         # Schedule philosophers eating in optimal way
   --ponder_usec <USEC>                    # Length of time a philosopher busy waits
   --pthread                               # Use pthread implementation
+  --manual_lock_order                     # Use less than lock order acquisition instead of std::lock backoff
+```
+
+The interesting configurations can be run, and the results plotted, using the scripts in `scripts/`:
+```
+> mkdir results
+> python3 ./scripts/dining.py --benchmark=./build/benchmark --o results/ # runs the benchmarks and saves results into results/
+> python3 ./scripts/plot.py --results=results/                           # plots a graph and writes a pdf to results/
 ```
