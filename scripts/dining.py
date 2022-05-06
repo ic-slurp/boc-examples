@@ -3,6 +3,7 @@ import os
 import time
 import csv
 import argparse
+import plot
 
 # This will measure setup and teardown time
 
@@ -13,6 +14,7 @@ def getopts():
                         help='number of times to repeat the runs')
     parser.add_argument('--benchmark', help='path to benchmark executable')
     parser.add_argument('-o', default='out/', help='outfiles directory')
+    parser.add_argument('--no-plot', default=False, action='store_true')
     args = parser.parse_args()
     return args
 
@@ -33,6 +35,7 @@ def make_csv(file):
 
 if __name__ == '__main__':
     args = getopts()
+
     # Dump it as a csv file so we can use it for pgfplots
     with open(os.path.join(args.o, 'verona_dining_opt.csv'), 'w') as vdo,\
          open(os.path.join(args.o, 'verona_dining_seq.csv'), 'w') as vds,\
@@ -69,3 +72,6 @@ if __name__ == '__main__':
                           '--hunger', f'{hunger}', '--num_tables', '1', '--num_philosophers', f'{philosophers}', '1'], num, csv_writer_vds, vds)
                 print('.', end='', flush=True)
             print('done repeat')
+
+    if not args.noplot:
+      plot.plot(args.o)

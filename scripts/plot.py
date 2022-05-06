@@ -11,7 +11,19 @@ def getopts():
   args = parser.parse_args()
   return args
 
-def plot(infiles, legends, symbols, colors, as_html):
+def plot(results_dir, as_html=False):
+    infiles = [
+      "pthread_dining_opt_manual",
+      "pthread_dining_opt",
+      "verona_dining_opt",
+      "verona_dining_seq"
+    ]
+    infiles = [ os.path.join(results_dir, f"{file}.csv") for file in infiles ]
+    symbols = [f"{symbol}-open" for symbol in ["triangle-up", "x-thin", "cross-thin", "circle"]]
+    colors = list(px.colors.qualitative.D3)
+    colors = [colors[0], colors[1], colors[4], colors[3], colors[2]] # i like ideal to be green
+    legends = ["Threads and Mutex (manual)", "Threads and Mutex (std::lock)", "Cowns (alternating)", "Cowns (sequential)"]
+
     layout = go.Layout(
         xaxis = dict(
             title = 'Hardware Threads',
@@ -91,24 +103,13 @@ def plot(infiles, legends, symbols, colors, as_html):
     ))
 
     if as_html:
-      fig.write_html(os.path.join(args.results, "out.html"))
+      fig.write_html(os.path.join(results_dir, "graph.html"))
     else:
       # this is pretty stupid, but we do it twice because the print has something
       # on screen the first time
-      fig.write_image(os.path.join(args.results, "out.pdf"))
-      fig.write_image(os.path.join(args.results, "out.pdf"))
+      fig.write_image(os.path.join(results_dir, "graph.pdf"))
+      fig.write_image(os.path.join(results_dir, "graph.pdf"))
 
 if __name__ == '__main__':
     args = getopts()
-    files_to_plot = [
-      "pthread_dining_opt_manual",
-      "pthread_dining_opt",
-      "verona_dining_opt",
-      "verona_dining_seq"
-    ]
-    files_to_plot = [ os.path.join(args.results, f"{file}.csv") for file in files_to_plot ]
-    symbols = [f"{symbol}-open" for symbol in ["triangle-up", "x-thin", "cross-thin", "circle"]]
-    colors = list(px.colors.qualitative.D3)
-    colors = [colors[0], colors[1], colors[4], colors[3], colors[2]] # i like ideal to be green
-    legends = ["Threads and Mutex (manual)", "Threads and Mutex (std::lock)", "Cowns (alternating)", "Cowns (sequential)"]
-    plot(files_to_plot, legends, symbols, colors, args.html)
+    plot(args.results, as_html=args.html)
