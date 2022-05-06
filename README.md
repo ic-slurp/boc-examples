@@ -43,6 +43,5 @@ Run the benchmark using combinations of the following options:
 The interesting configurations can be run, and the results plotted, using the scripts in `scripts/`:
 ```
 > mkdir results
-> python3 ./scripts/dining.py --benchmark=./build/benchmark --o results/ # runs the benchmarks and saves results into results/
-> python3 ./scripts/plot.py --results=results/                           # plots a graph and writes a pdf to results/
+> python3 ./scripts/dining.py --benchmark=./build/benchmark -o results/ # runs the benchmarks, saves timing csv results and graph into results/
 ```
