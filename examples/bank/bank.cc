@@ -10,6 +10,8 @@ namespace Bank
    * A collection of illustrative examples for:
    * - creating and accessing cowns
    * - spawning behaviours behaviours using 'when'
+   *
+   * These are illustrated in the context of accessing isolated bank accounts
    */
 
   struct Account {
