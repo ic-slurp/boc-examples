@@ -31,19 +31,20 @@ namespace ReadOnly {
     cown_ptr<Account> common_account = make_cown<Account>(100);
     when(common_account) << [](acquired_cown<Account> account) { account->balance -= 10; };
 
+    // num_accounts serieal jobs
     // num_accounts parallel jobs
     for (size_t i = 0 ; i < num_accounts; i++)
+    {
       when(accounts[i], op(common_account)) << [](acquired_cown<Account> write_account, acquired_cown<To> ro_account) {
         busy_loop(work_usec);
         write_account->balance = ro_account->balance;
       };
 
-    // num_accounts jobs
-    for (size_t i = 0 ; i < num_accounts; i++)
       when(op(accounts[i])) << [](acquired_cown<To> account) {
         busy_loop(work_usec);
         check(account->balance == 90);
       };
+    }
 
     when(common_account) << [](acquired_cown<Account> account) { account->balance += 10; };
 
