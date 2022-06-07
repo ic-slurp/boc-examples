@@ -24,15 +24,28 @@ namespace ReadOnly {
 
   template<typename To, typename From>
   void run(AccessOp<To, From> op) {
+    // If we have infinite threads, we should be able to parallelise completely
+    // the bulk of the work in the for loop.
+    // This means the optimal execution we're looking for is ~ 5 * work_usec
+
+    // The start and end jobs always add ~ 3 * work_usec
+    // For 'n' cores, we can execute 'n' parallel jobs at once
+    // So add ~ ((2 * num_accounts) / n) * work_usec
+
+    // For num_accounts = 1<<10, n = 4, work_usec=10000 this is:
+    //   (2 * (1 << 10) / 4) * 10000 = (2048 / 4) * 10000 = 5120000 usec = 5.12 secs
+
     std::vector<cown_ptr<Account>> accounts;
     for (size_t i = 0 ; i < num_accounts; i++)
       accounts.push_back(make_cown<Account>(0));
 
     cown_ptr<Account> common_account = make_cown<Account>(100);
-    when(common_account) << [](acquired_cown<Account> account) { account->balance -= 10; };
+    when(common_account) << [](acquired_cown<Account> account) {
+      busy_loop(work_usec);
+      account->balance -= 10;
+    };
 
-    // num_accounts serieal jobs
-    // num_accounts parallel jobs
+    // 2 * num_accounts potentially parallel jobs
     for (size_t i = 0 ; i < num_accounts; i++)
     {
       when(accounts[i], op(common_account)) << [](acquired_cown<Account> write_account, acquired_cown<To> ro_account) {
@@ -46,18 +59,15 @@ namespace ReadOnly {
       };
     }
 
-    when(common_account) << [](acquired_cown<Account> account) { account->balance += 10; };
+    when(common_account) << [](acquired_cown<Account> account) {
+      busy_loop(work_usec);
+      account->balance += 10;
+    };
 
     when(op(common_account)) << [](acquired_cown<To> account) {
       busy_loop(work_usec);
       check(account->balance == 100);
     };
-
-    when(common_account) << [] (acquired_cown<Account> account) { std::cout << "finished " << std::endl; };
-
-    // (2 * num_accounts) + 4 ~= (2 * num_accounts) behaviours
-    // half of which can be done in parallel
-    // optimal 2x speedup
   }
 
   void test_write() { run(&write<Account>); }
