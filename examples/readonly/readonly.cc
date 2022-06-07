@@ -29,11 +29,15 @@ namespace ReadOnly {
     // This means the optimal execution we're looking for is ~ 5 * work_usec
 
     // The start and end jobs always add ~ 3 * work_usec
+    // These are here to show happens before relations between write/read, read/write, read/read requests
+    // The time will mostly be dominated by the for loop jobs.
+
     // For 'n' cores, we can execute 'n' parallel jobs at once
     // So add ~ ((2 * num_accounts) / n) * work_usec
 
     // For num_accounts = 1<<10, n = 4, work_usec=10000 this is:
     //   (2 * (1 << 10) / 4) * 10000 = (2048 / 4) * 10000 = 5120000 usec = 5.12 secs
+    // Overall ~ 5.12 + 0.03 = 5.15 secs
 
     std::vector<cown_ptr<Account>> accounts;
     for (size_t i = 0 ; i < num_accounts; i++)
