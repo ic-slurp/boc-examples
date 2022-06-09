@@ -301,38 +301,34 @@ void step(const size_t width, const size_t height, cown_ptr<sf::RenderWindow> wi
   };
 }
 
-void run() {
-  const size_t width = 800;
-  const size_t height = 600;
-  cown_ptr<sf::RenderWindow> window = make_cown<sf::RenderWindow>(sf::VideoMode(width, height), "Boids");
-  // const size_t num_boids = 5;
-  // std::vector<cown_ptr<Boid>> boids;
+// template<typename...Ts>
+// void foo(std::tuple<Ts...> boids) {
+//   std::apply(when<Ts...>, boids) << [](decltype(cown_ptr_to_acquired(std::get<0>(boids)))...){};
+// }
 
-  std::default_random_engine gen;
-  std::uniform_int_distribution<int> x_dist(0, width - 1);
-  std::uniform_int_distribution<int> y_dist(0, height - 1);
-  // for (size_t i = 0; i < num_boids; ++i) {
-    // boids.push_back(make_cown<Boid>(Vector{double(x_dist(gen)), double(y_dist(gen))}));
-  // }
+// void something() {
+//   auto boids = std::make_tuple(make_cown<Boid>(Vector{0, 0}), make_cown<Boid>(Vector{0, 0}));
+//   foo(boids);
+// }
 
-  const int vlim = 10;
+const size_t width = 800;
+const size_t height = 600;
+const int vlim = 10;
+std::default_random_engine gen;
+std::uniform_int_distribution<int> x_dist(0, width - 1);
+std::uniform_int_distribution<int> y_dist(0, height - 1);
 
-  step(width, height, window, vlim,
-    make_cown<Boid>(Vector{double(x_dist(gen)), double(y_dist(gen))}),
-    make_cown<Boid>(Vector{double(x_dist(gen)), double(y_dist(gen))}),
-    make_cown<Boid>(Vector{double(x_dist(gen)), double(y_dist(gen))}),
-    make_cown<Boid>(Vector{double(x_dist(gen)), double(y_dist(gen))}));
-}
-
-void something(const size_t width, const size_t height, cown_ptr<sf::RenderWindow> window, const size_t vlim) {
-  cown_ptr<Boid> a = make_cown<Boid>(Vector{10, 10});
-  cown_ptr<Boid> b = make_cown<Boid>(Vector{20, 20});
-
-  step(width, height, window, vlim, a, b);
+template<std::size_t n, typename ...Ts>
+void run(Ts... boids) {
+  if constexpr (n == 0) {
+    step(width, height, make_cown<sf::RenderWindow>(sf::VideoMode(width, height), "Boids"), vlim, boids...);
+  } else {
+    run<n - 1, Ts..., cown_ptr<Boid>>(boids..., make_cown<Boid>(Vector{double(x_dist(gen)), double(y_dist(gen))}));
+  }
 }
 
 int main(int argc, char** argv)
 {
   SystematicTestHarness harness(argc, argv);
-  harness.run(run);
+  harness.run(run<50>);
 }
