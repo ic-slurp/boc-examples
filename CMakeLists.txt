@@ -9,6 +9,8 @@ add_subdirectory(verona/src/rt)
 set(EXAMPLES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/examples)
 subdirlist(EXAMPLES ${EXAMPLES_DIR})
 
+set(CMAKE_CXX_FLAGS)
+
 foreach(EXAMPLE ${EXAMPLES})
   unset(SRC)
   aux_source_directory(${EXAMPLES_DIR}/${EXAMPLE} SRC)
