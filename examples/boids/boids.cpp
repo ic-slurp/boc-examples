@@ -85,103 +85,9 @@ std::ostream& operator<<(std::ostream& os, const Boid& b)
 
 using Result = std::tuple<Vector, Vector, Vector>;
 
-void old_step(const size_t width, const size_t height, cown_ptr<sf::RenderWindow> window, std::vector<cown_ptr<Boid>> boids, const size_t vlim) {
-  when() << [width, height, window, boids = std::move(boids), vlim]() mutable {
-    const size_t num_boids = boids.size();
-
-    std::vector<cown_ptr<Result>> results;
-
-    for (size_t i = 0; i < num_boids; ++i)
-    {
-      cown_ptr<Result> partial_result = make_cown<Result>(Vector{0, 0}, Vector{0, 0}, Vector{0, 0});
-      results.push_back(partial_result);
-      for (size_t j = 0; j < num_boids; ++j)
-      {
-        if (i != j) {
-          when(boids[i], boids[j], partial_result) << [] (acquired_cown< Boid> boid, acquired_cown< Boid> other, acquired_cown<Result> result){
-            std::get<0>(*result) += other->position;
-            Vector diff = other->position - boid->position;
-            if (diff.abs() < 30) std::get<1>(*result) -= (diff / 2);;
-            std::get<2>(*result) += other->velocity;
-          };
-        }
-      }
-    }
-
-    for (size_t i = 0; i < num_boids; ++i)
-    {
-      when(boids[i], results[i]) << [num_boids, width, height, vlim](acquired_cown<Boid> boid, acquired_cown<Result> result){
-        std::get<0>(*result) /= (num_boids - 1);
-        std::get<0>(*result) = (std::get<0>(*result) - boid->position) / 50;
-
-        std::get<2>(*result) /= (num_boids - 1);
-        std::get<2>(*result) = (std::get<2>(*result) - boid->velocity) / 16;
-
-        Vector& p = boid->position;
-        Vector v4{0, 0};
-
-        if (p.x < 0) {
-          v4.x = 10;
-        } else if (p.x > width) {
-          v4.x = -10;
-        }
-
-        if (p.y < 0) {
-          v4.y = 10;
-        } else if (p.y > height) {
-          v4.y = -10;
-        }
-
-        Vector& v = boid->velocity;
-        v += std::get<0>(*result) + std::get<1>(*result) + std::get<2>(*result) + v4;
-        if (v.abs() > vlim) {
-          boid->velocity = (v / v.abs()) * vlim;
-        }
-        boid->position += v;
-      };
-    }
-
-    // this is a bit eager and will clear the window
-    // can we do a when<N> template?
-    // when(window) << [](acquired_cown<sf::RenderWindow> window) { window->clear(); };
-    for (size_t i = 0; i < num_boids; ++i)
-    {
-      when(read(boids[i]), window) << [i](acquired_cown<Boid const> boid, acquired_cown<sf::RenderWindow> window) {
-        std::cout << "boids[" << i << "]: " << *boid << std::endl;
-        sf::CircleShape shape(5.f, 3);
-        shape.setFillColor(sf::Color(0, 0, 0, 0));
-        shape.setOutlineThickness(1.f);
-        shape.setOutlineColor(sf::Color::Green);
-        shape.setPosition(boid->position.x, boid->position.y);
-        double r = atan2(boid->velocity.y, boid->velocity.x);
-        shape.setRotation(r * (180 / M_PI));
-        window->draw(shape);
-      };
-    }
-    when(window) << [](acquired_cown<sf::RenderWindow> window) { window->display(); };
-
-    old_step(width, height, window, std::move(boids), vlim);
-  };
-}
-
-void old_ran() {
-  const size_t width = 800;
-  const size_t height = 600;
-  cown_ptr<sf::RenderWindow> window = make_cown<sf::RenderWindow>(sf::VideoMode(width, height), "Boids");
-  const size_t num_boids = 50;
-  std::vector<cown_ptr<Boid>> boids;
-
-  std::default_random_engine gen;
-  std::uniform_int_distribution<int> x_dist(0, width - 1);
-  std::uniform_int_distribution<int> y_dist(0, height - 1);
-  for (size_t i = 0; i < num_boids; ++i) {
-    boids.push_back(make_cown<Boid>(Vector{double(x_dist(gen)), double(y_dist(gen))}));
-  }
-
-  const int vlim = 10;
-
-  old_step(width, height, window, std::move(boids), vlim);
-}
+const size_t width = 800;
+const size_t height = 600;
+const int vlim = 10;
 
 template<typename C>
 static acquired_cown<C> cown_ptr_to_acquired(cown_ptr<C> c)
@@ -189,51 +95,40 @@ static acquired_cown<C> cown_ptr_to_acquired(cown_ptr<C> c)
   return acquired_cown<C>(c);
 }
 
-template<size_t i, size_t j, typename... Ts>
-void compute_partial_result(acquired_cown<Result>& partial_result, std::tuple<Ts...>& boids) {
-  if constexpr (j >= sizeof...(Ts)) {
-    return;
-  } else if constexpr (i != j) {
-      std::get<0>(*partial_result) += std::get<j>(boids)->position;
-      Vector diff = std::get<j>(boids)->position - std::get<i>(boids)->position;
-      if (diff.abs() < 30) std::get<1>(*partial_result) -= (diff / 2);;
-      std::get<2>(*partial_result) += std::get<j>(boids)->velocity;
-  } else {
-    compute_partial_result<i, j+1>(partial_result, boids);
-  }
-}
-
-template<size_t i, typename... Ts>
-void compute_partial_results(std::vector<cown_ptr<Result>>& results, Ts... args) {
-  if constexpr (i >= sizeof...(Ts)) {
-    return;
-  } else {
+template<size_t n, std::size_t... I>
+void compute_partial_results_impl(std::vector<cown_ptr<Result>>& results,  std::array<cown_ptr<Boid>, n>& boids, std::index_sequence<I...>) {
+  for (size_t i = 0; i < n; ++i) {
     cown_ptr<Result> partial_result = make_cown<Result>(Vector{0, 0}, Vector{0, 0}, Vector{0, 0});
     results.push_back(partial_result);
 
-    when(partial_result, args...) << [](acquired_cown<Result> partial_result, decltype(cown_ptr_to_acquired(args))... acquired) {
-      const size_t num_boids = sizeof...(Ts);
-      std::tuple<decltype(cown_ptr_to_acquired(args))&...> boids(acquired...);
-      compute_partial_result<i, 0>(partial_result, boids);
+    when(partial_result, std::get<I>(boids)...) << [i](acquired_cown<Result> partial_result, decltype(cown_ptr_to_acquired(std::get<I>(boids)))... acquired){
+      std::array<acquired_cown<Boid>*, n> boids {{ (&acquired)... }};
+      for (size_t j = 0; j < n; ++j) {
+        if (i != j) {
+          std::get<0>(*partial_result) += (*boids[j])->position;
+          Vector diff = (*boids[j])->position - (*boids[i])->position;
+          if (diff.abs() < 30) std::get<1>(*partial_result) -= (diff / 2);;
+          std::get<2>(*partial_result) += (*boids[j])->velocity;
+        }
+      }
     };
-
-    compute_partial_results<i+1>(results, args...);
   }
 }
 
-template<size_t i, typename... Ts>
-void update_boid_positions(std::vector<cown_ptr<Result>>& results, const size_t width, const size_t height, const size_t vlim, Ts... args) {
-  if constexpr (i >= sizeof...(Ts)) {
-    return;
-  } else {
-    std::tuple<Ts...> boids(args...);
-    when(std::get<i>(boids), results[i]) << [width, height, vlim](acquired_cown<Boid> boid, acquired_cown<Result> result){
-      const size_t num_boids = sizeof...(Ts);
-      std::get<0>(*result) /= (num_boids - 1);
-      std::get<0>(*result) = (std::get<0>(*result) - boid->position) / 50;
+template<std::size_t n, typename Indices = std::make_index_sequence<n>>
+void compute_partial_results(std::vector<cown_ptr<Result>>& results, std::array<cown_ptr<Boid>, n>& boids) {
+  compute_partial_results_impl(results, boids, Indices{});
+}
 
-      std::get<2>(*result) /= (num_boids - 1);
-      std::get<2>(*result) = (std::get<2>(*result) - boid->velocity) / 16;
+template<size_t n>
+void update_boid_positions(std::vector<cown_ptr<Result>>& results, std::array<cown_ptr<Boid>, n>& boids) {
+  for (size_t i = 0; i < n; ++i) {
+    when(results[i], boids[i]) << [i](acquired_cown<Result> partial_result, acquired_cown<Boid> boid){
+      std::get<0>(*partial_result) /= (n - 1);
+      std::get<0>(*partial_result) = (std::get<0>(*partial_result) - boid->position) / 50;
+
+      std::get<2>(*partial_result) /= (n - 1);
+      std::get<2>(*partial_result) = (std::get<2>(*partial_result) - boid->velocity) / 16;
 
       Vector& p = boid->position;
       Vector v4{0, 0};
@@ -251,103 +146,67 @@ void update_boid_positions(std::vector<cown_ptr<Result>>& results, const size_t 
       }
 
       Vector& v = boid->velocity;
-      v += std::get<0>(*result) + std::get<1>(*result) + std::get<2>(*result) + v4;
+      v += std::get<0>(*partial_result) + std::get<1>(*partial_result) + std::get<2>(*partial_result) + v4;
       if (v.abs() > vlim) {
         boid->velocity = (v / v.abs()) * vlim;
       }
       boid->position += v;
     };
-    update_boid_positions<i + 1>(results, width, height, vlim, args...);
   }
 }
 
-template<size_t i, typename... Ts>
-void draw_boids(acquired_cown<sf::RenderWindow>& window, std::tuple<Ts...>& boids) {
-  if constexpr (i >= sizeof...(Ts)) {
-    return;
-  } else {
-    //     std::cout << "boids[" << i << "]: " << *boid << std::endl;
-    acquired_cown<Boid>& boid = std::get<i>(boids);
-    sf::CircleShape shape(5.f, 3);
-    shape.setFillColor(sf::Color(0, 0, 0, 0));
-    shape.setOutlineThickness(1.f);
-    shape.setOutlineColor(sf::Color::Green);
-    shape.setPosition(boid->position.x, boid->position.y);
-    double r = atan2(boid->velocity.y, boid->velocity.x);
-    shape.setRotation(r * (180 / M_PI));
-    window->draw(shape);
-    draw_boids<i + 1>(window, boids);
-  }
+void draw_boid(acquired_cown<sf::RenderWindow>& window, acquired_cown<Boid>& boid) {
+  sf::CircleShape shape(5.f, 3);
+  shape.setFillColor(sf::Color(0, 0, 0, 0));
+  shape.setOutlineThickness(1.f);
+  shape.setOutlineColor(sf::Color::Green);
+  shape.setPosition(boid->position.x, boid->position.y);
+  double r = atan2(boid->velocity.y, boid->velocity.x);
+  shape.setRotation(r * (180 / M_PI));
+  window->draw(shape);
 }
 
-template<typename... Ts>
-void step(const size_t width, const size_t height, cown_ptr<sf::RenderWindow> window, const size_t vlim, Ts... args) {
-  when() << [width, height, window, vlim, args...]() mutable {
-    const size_t num_boids = sizeof...(Ts);
-
+template<size_t n, std::size_t... I>
+void step_impl(cown_ptr<sf::RenderWindow> window, std::array<cown_ptr<Boid>, n> boids, std::index_sequence<I...>) {
+  when() << [window, boids]() mutable {
     std::vector<cown_ptr<Result>> results;
-    compute_partial_results<0>(results, args...);
+    compute_partial_results(results, boids);
+    update_boid_positions(results, boids);
 
-    update_boid_positions<0>(results, width, height, vlim, args...);
-
-    when(window, args...) << [](acquired_cown<sf::RenderWindow> window, decltype(cown_ptr_to_acquired(args))... acquired) {
+    when(window, std::get<I>(boids)...) << [](acquired_cown<sf::RenderWindow> window, decltype(cown_ptr_to_acquired(std::get<I>(boids)))... acquired){
       window->clear();
-      std::tuple<decltype(cown_ptr_to_acquired(args))&...> boids(acquired...);
-      draw_boids<0>(window, boids);
+      (draw_boid(window, acquired), ...);
       window->display();
     };
 
-    step(width, height, window, vlim, args...);
+    step(window, boids);
   };
 }
 
-// This will take less time to compile????
-template<typename...Ts>
-void doesitwork(std::tuple<Ts...> boids) {
-  std::apply(when<Ts...>, boids) << [](decltype(cown_ptr_to_acquired(std::get<0>(boids)))...){};
+template<std::size_t n, typename Indices = std::make_index_sequence<n>>
+void step(cown_ptr<sf::RenderWindow> window, std::array<cown_ptr<Boid>, n> boids) {
+  step_impl(window, boids, Indices{});
 }
 
-template<typename T, size_t n, std::size_t... I>
-void bar_impl(std::array<T, n> boids, std::index_sequence<I...>) {
-  when(std::get<I>(boids)...) << [](decltype(cown_ptr_to_acquired(std::get<I>(boids)))...){
+template<size_t n, std::size_t... I>
+void run_impl(std::index_sequence<I...> is) {
+  std::default_random_engine gen;
+  std::uniform_int_distribution<int> x_dist(0, width - 1);
+  std::uniform_int_distribution<int> y_dist(0, height - 1);
 
-  };
+  // static cast inside tuple to unpack the parameters
+  std::array<cown_ptr<Boid>, n> boids = {{ (static_cast<void>(I), make_cown<Boid>(Vector{double(x_dist(gen)), double(y_dist(gen))}))... }};
+  auto window = make_cown<sf::RenderWindow>(sf::VideoMode(width, height), "Boids");
+  step(window, boids);
 }
 
-template<typename T, size_t n, typename Indices = std::make_index_sequence<n>>
-void bar(std::array<T, n> boids) {
-  bar_impl(boids, Indices{});
-}
-
-void something() {
-  auto boids = std::make_tuple(make_cown<Boid>(Vector{0, 0}), make_cown<Boid>(Vector{0, 0}));
-  doesitwork(boids);
-}
-
-void somethingelse() {
-  std::array<cown_ptr<Boid>, 2> boids = {{make_cown<Boid>(Vector{0, 0}), make_cown<Boid>(Vector{0, 0})}};
-  bar(boids);
-}
-
-const size_t width = 800;
-const size_t height = 600;
-const int vlim = 10;
-std::default_random_engine gen;
-std::uniform_int_distribution<int> x_dist(0, width - 1);
-std::uniform_int_distribution<int> y_dist(0, height - 1);
-
-template<std::size_t n, typename ...Ts>
-void run(Ts... boids) {
-  something();
-  // if constexpr (n == 0) {
-    // step(width, height, make_cown<sf::RenderWindow>(sf::VideoMode(width, height), "Boids"), vlim, boids...);
-  // } else {
-    // run<n - 1, Ts..., cown_ptr<Boid>>(boids..., make_cown<Boid>(Vector{double(x_dist(gen)), double(y_dist(gen))}));
-  // }
+template<std::size_t n, typename Indices = std::make_index_sequence<n>>
+void run() {
+  run_impl<n>(Indices{});
 }
 
 int main(int argc, char** argv)
 {
   SystematicTestHarness harness(argc, argv);
-  harness.run(run<50>);
+  harness.run(run<30>);
 }
