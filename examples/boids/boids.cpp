@@ -89,16 +89,13 @@ const size_t width = 800;
 const size_t height = 600;
 const int vlim = 10;
 
-template<typename C>
-static acquired_cown<C> cown_ptr_to_acquired(cown_ptr<C> c)
-{
-  return acquired_cown<C>(c);
-}
+template<size_t>
+using acquired_boid = acquired_cown<Boid>;
 
 template<size_t n, std::size_t... I>
 void compute_partial_results_impl(std::array<cown_ptr<Result>, n>& results,  std::array<cown_ptr<Boid>, n>& boids, std::index_sequence<I...>) {
   for (size_t i = 0; i < n; ++i) {
-    when(results[i], std::get<I>(boids)...) << [i](acquired_cown<Result> partial_result, decltype(cown_ptr_to_acquired(std::get<I>(boids)))... acquired){
+    when(results[i], std::get<I>(boids)...) << [i](acquired_cown<Result> partial_result, acquired_boid<I>... acquired){
       std::array<acquired_cown<Boid>*, n> boids {{ (&acquired)... }};
       for (size_t j = 0; j < n; ++j) {
         if (i != j) {
@@ -170,7 +167,7 @@ void step_impl(cown_ptr<sf::RenderWindow> window, std::array<cown_ptr<Boid>, n> 
     compute_partial_results(partial_results, boids);
     update_boid_positions(partial_results, boids);
 
-    when(window, std::get<I>(boids)...) << [](acquired_cown<sf::RenderWindow> window, decltype(cown_ptr_to_acquired(std::get<I>(boids)))... acquired){
+    when(window, std::get<I>(boids)...) << [](acquired_cown<sf::RenderWindow> window, acquired_boid<I>... acquired){
       window->clear();
       (draw_boid(window, acquired), ...);
       window->display();
@@ -205,5 +202,5 @@ void run() {
 int main(int argc, char** argv)
 {
   SystematicTestHarness harness(argc, argv);
-  harness.run(run<30>);
+  harness.run(run<10>);
 }
