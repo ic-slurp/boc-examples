@@ -301,15 +301,33 @@ void step(const size_t width, const size_t height, cown_ptr<sf::RenderWindow> wi
   };
 }
 
-// template<typename...Ts>
-// void foo(std::tuple<Ts...> boids) {
-//   std::apply(when<Ts...>, boids) << [](decltype(cown_ptr_to_acquired(std::get<0>(boids)))...){};
-// }
+// This will take less time to compile????
+template<typename...Ts>
+void doesitwork(std::tuple<Ts...> boids) {
+  std::apply(when<Ts...>, boids) << [](decltype(cown_ptr_to_acquired(std::get<0>(boids)))...){};
+}
 
-// void something() {
-//   auto boids = std::make_tuple(make_cown<Boid>(Vector{0, 0}), make_cown<Boid>(Vector{0, 0}));
-//   foo(boids);
-// }
+template<typename T, size_t n, std::size_t... I>
+void bar_impl(std::array<T, n> boids, std::index_sequence<I...>) {
+  when(std::get<I>(boids)...) << [](decltype(cown_ptr_to_acquired(std::get<I>(boids)))...){
+
+  };
+}
+
+template<typename T, size_t n, typename Indices = std::make_index_sequence<n>>
+void bar(std::array<T, n> boids) {
+  bar_impl(boids, Indices{});
+}
+
+void something() {
+  auto boids = std::make_tuple(make_cown<Boid>(Vector{0, 0}), make_cown<Boid>(Vector{0, 0}));
+  doesitwork(boids);
+}
+
+void somethingelse() {
+  std::array<cown_ptr<Boid>, 2> boids = {{make_cown<Boid>(Vector{0, 0}), make_cown<Boid>(Vector{0, 0})}};
+  bar(boids);
+}
 
 const size_t width = 800;
 const size_t height = 600;
@@ -320,11 +338,12 @@ std::uniform_int_distribution<int> y_dist(0, height - 1);
 
 template<std::size_t n, typename ...Ts>
 void run(Ts... boids) {
-  if constexpr (n == 0) {
-    step(width, height, make_cown<sf::RenderWindow>(sf::VideoMode(width, height), "Boids"), vlim, boids...);
-  } else {
-    run<n - 1, Ts..., cown_ptr<Boid>>(boids..., make_cown<Boid>(Vector{double(x_dist(gen)), double(y_dist(gen))}));
-  }
+  something();
+  // if constexpr (n == 0) {
+    // step(width, height, make_cown<sf::RenderWindow>(sf::VideoMode(width, height), "Boids"), vlim, boids...);
+  // } else {
+    // run<n - 1, Ts..., cown_ptr<Boid>>(boids..., make_cown<Boid>(Vector{double(x_dist(gen)), double(y_dist(gen))}));
+  // }
 }
 
 int main(int argc, char** argv)
