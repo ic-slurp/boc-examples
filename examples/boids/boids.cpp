@@ -216,7 +216,7 @@ int main(int argc, char** argv)
   SystematicTestHarness harness(argc, argv);
   constexpr size_t num_boids = 10;
   if (harness.opt.has("--ro"))
-    harness.run(run_write<num_boids>);
+    harness.run(run_read<num_boids>);
   else
     harness.run(run_write<num_boids>);
 }
