@@ -96,18 +96,15 @@ static acquired_cown<C> cown_ptr_to_acquired(cown_ptr<C> c)
 }
 
 template<size_t n, std::size_t... I>
-void compute_partial_results_impl(std::vector<cown_ptr<Result>>& results,  std::array<cown_ptr<Boid>, n>& boids, std::index_sequence<I...>) {
+void compute_partial_results_impl(std::array<cown_ptr<Result>, n>& results,  std::array<cown_ptr<Boid>, n>& boids, std::index_sequence<I...>) {
   for (size_t i = 0; i < n; ++i) {
-    cown_ptr<Result> partial_result = make_cown<Result>(Vector{0, 0}, Vector{0, 0}, Vector{0, 0});
-    results.push_back(partial_result);
-
-    when(partial_result, std::get<I>(boids)...) << [i](acquired_cown<Result> partial_result, decltype(cown_ptr_to_acquired(std::get<I>(boids)))... acquired){
+    when(results[i], std::get<I>(boids)...) << [i](acquired_cown<Result> partial_result, decltype(cown_ptr_to_acquired(std::get<I>(boids)))... acquired){
       std::array<acquired_cown<Boid>*, n> boids {{ (&acquired)... }};
       for (size_t j = 0; j < n; ++j) {
         if (i != j) {
           std::get<0>(*partial_result) += (*boids[j])->position;
           Vector diff = (*boids[j])->position - (*boids[i])->position;
-          if (diff.abs() < 30) std::get<1>(*partial_result) -= (diff / 2);;
+          if (diff.abs() < 30) std::get<1>(*partial_result) -= (diff / 2);
           std::get<2>(*partial_result) += (*boids[j])->velocity;
         }
       }
@@ -116,12 +113,12 @@ void compute_partial_results_impl(std::vector<cown_ptr<Result>>& results,  std::
 }
 
 template<std::size_t n, typename Indices = std::make_index_sequence<n>>
-void compute_partial_results(std::vector<cown_ptr<Result>>& results, std::array<cown_ptr<Boid>, n>& boids) {
+void compute_partial_results(std::array<cown_ptr<Result>, n>& results, std::array<cown_ptr<Boid>, n>& boids) {
   compute_partial_results_impl(results, boids, Indices{});
 }
 
 template<size_t n>
-void update_boid_positions(std::vector<cown_ptr<Result>>& results, std::array<cown_ptr<Boid>, n>& boids) {
+void update_boid_positions(std::array<cown_ptr<Result>, n>& results, std::array<cown_ptr<Boid>, n>& boids) {
   for (size_t i = 0; i < n; ++i) {
     when(results[i], boids[i]) << [i](acquired_cown<Result> partial_result, acquired_cown<Boid> boid){
       std::get<0>(*partial_result) /= (n - 1);
@@ -169,9 +166,9 @@ void draw_boid(acquired_cown<sf::RenderWindow>& window, acquired_cown<Boid>& boi
 template<size_t n, std::size_t... I>
 void step_impl(cown_ptr<sf::RenderWindow> window, std::array<cown_ptr<Boid>, n> boids, std::index_sequence<I...>) {
   when() << [window, boids]() mutable {
-    std::vector<cown_ptr<Result>> results;
-    compute_partial_results(results, boids);
-    update_boid_positions(results, boids);
+    std::array<cown_ptr<Result>, n> partial_results =  {{ (static_cast<void>(I), make_cown<Result>(Vector{0, 0}, Vector{0, 0}, Vector{0, 0}))... }};
+    compute_partial_results(partial_results, boids);
+    update_boid_positions(partial_results, boids);
 
     when(window, std::get<I>(boids)...) << [](acquired_cown<sf::RenderWindow> window, decltype(cown_ptr_to_acquired(std::get<I>(boids)))... acquired){
       window->clear();
