@@ -89,14 +89,20 @@ const size_t width = 800;
 const size_t height = 600;
 const int vlim = 10;
 
+template<typename To, typename From>
+using AccessOp = cown_ptr<To> (*)(cown_ptr<From>);
+
+template<typename T>
+constexpr cown_ptr<T> write(cown_ptr<T> o) { return o; }
+
 template<typename T, size_t>
 using acquired = acquired_cown<T>;
 
-template<size_t n, std::size_t... I>
-void compute_partial_results_impl(std::array<cown_ptr<Result>, n>& results,  std::array<cown_ptr<Boid>, n>& boids, std::index_sequence<I...>) {
+template<size_t n, std::size_t... I, typename To, typename From>
+void compute_partial_results_impl(AccessOp<To, From> op, std::array<cown_ptr<Result>, n>& results,  std::array<cown_ptr<Boid>, n>& boids, std::index_sequence<I...>) {
   for (size_t i = 0; i < n; ++i) {
-    when(results[i], std::get<I>(boids)...) << [i](acquired_cown<Result> partial_result, acquired<Boid, I>... acquired){
-      std::array<acquired_cown<Boid>*, n> boids {{ (&acquired)... }};
+    when(results[i], op(std::get<I>(boids))...) << [i](acquired_cown<Result> partial_result, acquired<To, I>... acquired){
+      std::array<acquired_cown<To>*, n> boids {{ (&acquired)... }};
       for (size_t j = 0; j < n; ++j) {
         if (i != j) {
           std::get<0>(*partial_result) += (*boids[j])->position;
@@ -109,9 +115,9 @@ void compute_partial_results_impl(std::array<cown_ptr<Result>, n>& results,  std
   }
 }
 
-template<std::size_t n, typename Indices = std::make_index_sequence<n>>
-void compute_partial_results(std::array<cown_ptr<Result>, n>& results, std::array<cown_ptr<Boid>, n>& boids) {
-  compute_partial_results_impl(results, boids, Indices{});
+template<std::size_t n, typename Indices = std::make_index_sequence<n>, typename To, typename From>
+void compute_partial_results(AccessOp<To, From> op, std::array<cown_ptr<Result>, n>& results, std::array<cown_ptr<Boid>, n>& boids) {
+  compute_partial_results_impl(op, results, boids, Indices{});
 }
 
 template<size_t n>
@@ -149,7 +155,8 @@ void update_boid_positions(std::array<cown_ptr<Result>, n>& results, std::array<
   }
 }
 
-void draw_boid(acquired_cown<sf::RenderWindow>& window, acquired_cown<Boid>& boid) {
+template<typename To>
+void draw_boid(acquired_cown<sf::RenderWindow>& window, acquired_cown<To>& boid) {
   sf::CircleShape shape(5.f, 3);
   shape.setFillColor(sf::Color(0, 0, 0, 0));
   shape.setOutlineThickness(1.f);
@@ -160,30 +167,30 @@ void draw_boid(acquired_cown<sf::RenderWindow>& window, acquired_cown<Boid>& boi
   window->draw(shape);
 }
 
-template<size_t n, std::size_t... I>
-void step_impl(cown_ptr<sf::RenderWindow> window, std::array<cown_ptr<Boid>, n> boids, std::index_sequence<I...>) {
-  when() << [window, boids]() mutable {
+template<size_t n, std::size_t... I, typename To, typename From>
+void step_impl(AccessOp<To, From> op, cown_ptr<sf::RenderWindow> window, std::array<cown_ptr<Boid>, n> boids, std::index_sequence<I...>) {
+  when() << [op, window, boids]() mutable {
     std::array<cown_ptr<Result>, n> partial_results =  {{ (static_cast<void>(I), make_cown<Result>(Vector{0, 0}, Vector{0, 0}, Vector{0, 0}))... }};
-    compute_partial_results(partial_results, boids);
+    compute_partial_results(op, partial_results, boids);
     update_boid_positions(partial_results, boids);
 
-    when(window, std::get<I>(boids)...) << [](acquired_cown<sf::RenderWindow> window, acquired<Boid, I>... acquired){
+    when(window, op(std::get<I>(boids))...) << [](acquired_cown<sf::RenderWindow> window, acquired<To, I>... acquired){
       window->clear();
       (draw_boid(window, acquired), ...);
       window->display();
     };
 
-    step(window, boids);
+    step(op, window, boids);
   };
 }
 
-template<std::size_t n, typename Indices = std::make_index_sequence<n>>
-void step(cown_ptr<sf::RenderWindow> window, std::array<cown_ptr<Boid>, n> boids) {
-  step_impl(window, boids, Indices{});
+template<std::size_t n, typename Indices = std::make_index_sequence<n>, typename To, typename From>
+void step(AccessOp<To, From> op, cown_ptr<sf::RenderWindow> window, std::array<cown_ptr<Boid>, n> boids) {
+  step_impl(op, window, boids, Indices{});
 }
 
-template<size_t n, std::size_t... I>
-void run_impl(std::index_sequence<I...> is) {
+template<size_t n, std::size_t... I, typename To, typename From>
+void run_impl(AccessOp<To, From> op, std::index_sequence<I...> is) {
   std::default_random_engine gen;
   std::uniform_int_distribution<int> x_dist(0, width - 1);
   std::uniform_int_distribution<int> y_dist(0, height - 1);
@@ -191,16 +198,25 @@ void run_impl(std::index_sequence<I...> is) {
   // static cast inside tuple to unpack the parameters
   std::array<cown_ptr<Boid>, n> boids = {{ (static_cast<void>(I), make_cown<Boid>(Vector{double(x_dist(gen)), double(y_dist(gen))}))... }};
   auto window = make_cown<sf::RenderWindow>(sf::VideoMode(width, height), "Boids");
-  step(window, boids);
+  step(op, window, boids);
 }
 
 template<std::size_t n, typename Indices = std::make_index_sequence<n>>
-void run() {
-  run_impl<n>(Indices{});
+void run_read() {
+  run_impl<n>(&read<Boid>, Indices{});
+}
+
+template<std::size_t n, typename Indices = std::make_index_sequence<n>>
+void run_write() {
+  run_impl<n>(&write<Boid>, Indices{});
 }
 
 int main(int argc, char** argv)
 {
   SystematicTestHarness harness(argc, argv);
-  harness.run(run<20>);
+  constexpr size_t num_boids = 10;
+  if (harness.opt.has("--ro"))
+    harness.run(run_write<num_boids>);
+  else
+    harness.run(run_write<num_boids>);
 }
