@@ -87,7 +87,9 @@ using Result = std::tuple<Vector, Vector, Vector>;
 
 const size_t width = 800;
 const size_t height = 600;
-const int vlim = 10;
+const int vlim = 20;
+
+static size_t work_usec = 10000;
 
 template<typename To, typename From>
 using AccessOp = cown_ptr<To> (*)(cown_ptr<From>);
@@ -107,7 +109,7 @@ void compute_partial_results_impl(AccessOp<To, From> op, std::array<cown_ptr<Res
         if (i != j) {
           std::get<0>(*partial_result) += (*boids[j])->position;
           Vector diff = (*boids[j])->position - (*boids[i])->position;
-          if (diff.abs() < 30) std::get<1>(*partial_result) -= (diff / 2);
+          if (diff.abs() < 30) std::get<1>(*partial_result) -= diff;
           std::get<2>(*partial_result) += (*boids[j])->velocity;
         }
       }
@@ -125,10 +127,10 @@ void update_boid_positions(std::array<cown_ptr<Result>, n>& results, std::array<
   for (size_t i = 0; i < n; ++i) {
     when(results[i], boids[i]) << [i](acquired_cown<Result> partial_result, acquired_cown<Boid> boid){
       std::get<0>(*partial_result) /= (n - 1);
-      std::get<0>(*partial_result) = (std::get<0>(*partial_result) - boid->position) / 50;
+      std::get<0>(*partial_result) = (std::get<0>(*partial_result) - boid->position) / 120;
 
       std::get<2>(*partial_result) /= (n - 1);
-      std::get<2>(*partial_result) = (std::get<2>(*partial_result) - boid->velocity) / 16;
+      std::get<2>(*partial_result) = (std::get<2>(*partial_result) - boid->velocity) / 8;
 
       Vector& p = boid->position;
       Vector v4{0, 0};
@@ -214,7 +216,7 @@ void run_write() {
 int main(int argc, char** argv)
 {
   SystematicTestHarness harness(argc, argv);
-  constexpr size_t num_boids = 10;
+  constexpr size_t num_boids = 50;
   if (harness.opt.has("--ro"))
     harness.run(run_read<num_boids>);
   else
