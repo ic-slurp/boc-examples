@@ -1,7 +1,9 @@
-#include <test/harness.h>
+#include <debug/harness.h>
 #include <cpp/when.h>
 
 using namespace verona::rt;
+
+using namespace verona::cpp;
 
 struct E {};
 
@@ -11,6 +13,11 @@ void test_body()
     when (a) << [](acquired_cown<E>) {};
 }
 
+void test(const cown_ptr<int> x) {
+  when(x) <<[](acquired_cown<int> x) {
+    
+  };
+}
 
 int main(int argc, char** argv)
 {

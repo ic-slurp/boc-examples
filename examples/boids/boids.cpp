@@ -1,11 +1,13 @@
 // Copyright Microsoft and Project Verona Contributors.
 // SPDX-License-Identifier: MIT
 #include <memory>
-#include <test/harness.h>
+#include <debug/harness.h>
 #include <cpp/when.h>
 #include <cmath>
 #include <random>
 #include <SFML/Graphics.hpp>
+
+using namespace verona::cpp;
 
 struct Vector {
   double x;

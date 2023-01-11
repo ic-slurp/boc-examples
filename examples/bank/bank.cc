@@ -1,8 +1,10 @@
 // Copyright Microsoft and Project Verona Contributors.
 // SPDX-License-Identifier: MIT
 #include <memory>
-#include <test/harness.h>
+#include <debug/harness.h>
 #include <cpp/when.h>
+
+using namespace verona::cpp;
 
 namespace Bank
 {
@@ -66,7 +68,7 @@ namespace Bank
      * - The deposit does not have access to src.
      */
     void transfer(cown_ptr<Account> src, cown_ptr<Account> dst, int amount) {
-      when(src) << [dst, amount](acquired_cown<Account> src) {
+      when(src) << [dst, amount](acquired_cown<Account> src) mutable {
         if (src->balance >= amount) {
           src->balance -= amount;
           when(dst) << [amount](acquired_cown<Account> dst) { dst->balance += amount; };
