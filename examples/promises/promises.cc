@@ -49,23 +49,23 @@ public:
   };
 
   namespace {
-  template<size_t Idx=0, typename ...Args1, typename ...Args2>
-    void _join(promise<std::tuple<Args1...>> p, std::tuple<Args2...> r, std::tuple<promise<Args1>...> ps) {
-      if constexpr (sizeof...(Args1) == sizeof...(Args2)) {
-        // now we have collected all of the arguments
-        p.fulfill(r);
-      } else {
-        std::get<Idx>(ps).then([p, r, ps](const auto& v) mutable {
-          _join<Idx + 1>(p, std::tuple_cat(r, std::make_tuple(v)), move(ps));
-        });
-      }
+    template<typename ...Args>
+    void _join(promise<std::tuple<Args...>> p, std::tuple<Args...> r) {
+      p.fulfill(r);
+    }
+
+    template<typename ...Args1, typename ...Args2, typename Arg, typename ...Args3>
+    void _join(promise<std::tuple<Args1...>> p, std::tuple<Args2...> r, promise<Arg> pr, promise<Args3>... prs) {
+      pr.then([p, r, prs...](const auto& v) mutable {
+        _join(p, std::tuple_cat(r, std::make_tuple(v)), prs...);
+      });
     }
   }
 
   template<typename ...Args>
   promise<std::tuple<Args...>> join(promise<Args> ... ps) {
     promise<std::tuple<Args...>> p;
-    _join(p, std::make_tuple(), std::make_tuple(ps...));
+    _join(p, std::make_tuple(), ps...);
     return p;
   }
 
