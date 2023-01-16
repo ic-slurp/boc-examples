@@ -25,7 +25,7 @@ namespace promises {
 public:
     promise(): inner(make_cown<internal>()) {}
 
-    void then(std::function<void(const T&)> f) {
+    promise<T>& then(std::function<void(const T&)> f) {
       when(inner) << [f=std::move(f)](acquired_cown<internal> inner) mutable {
         if (inner->v) {
           f(inner->v.value());
@@ -33,6 +33,7 @@ public:
           inner->q.emplace_back(move(f));
         }
       };
+      return *this;
     }
 
     void fulfill(const T v) {
@@ -90,6 +91,8 @@ public:
     when(c1) << [p](acquired_cown<int> c) mutable {
       p.then([](const int& v){
         std::cout << "Fulfilled with: " << v << std::endl;
+      }).then([](const int& v){
+        std::cout << "It didn't change" << std::endl;
       });
     };
 
@@ -163,6 +166,6 @@ public:
 int main(int argc, char** argv)
 {
   SystematicTestHarness harness(argc, argv);
-  harness.run(promises::run3);
+  harness.run(promises::run1);
   return 0;
 }
