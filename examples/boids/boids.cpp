@@ -7,6 +7,11 @@
 #include <random>
 #include <SFML/Graphics.hpp>
 
+/* Based on https://vergenet.net/~conrad/boids/pseudocode.html
+ * with parameter tweaks and modifications to split boid
+ * updates into two phases: global and local computations
+ */
+
 using namespace verona::cpp;
 
 struct Vector {
@@ -85,6 +90,7 @@ std::ostream& operator<<(std::ostream& os, const Boid& b)
   return os;
 }
 
+/* store the aggregated positions, velocity */
 using Result = std::tuple<Vector, Vector, Vector>;
 
 const size_t width = 800;
@@ -109,9 +115,15 @@ void compute_partial_results_impl(AccessOp<To, From> op, std::array<cown_ptr<Res
       std::array<acquired_cown<To>*, n> boids {{ (&acquired)... }};
       for (size_t j = 0; j < n; ++j) {
         if (i != j) {
+          // Rule 1: collect sum of boid positions
           std::get<0>(*partial_result) += (*boids[j])->position;
+
+          // Rule 2: If the boid is 'close' (here within 30) then
+          // collect the (displacement * 2) to move boid away from these other boids
           Vector diff = (*boids[j])->position - (*boids[i])->position;
           if (diff.abs() < 30) std::get<1>(*partial_result) -= diff;
+
+          // Rule 3: Collect the velocity of boids in the flock
           std::get<2>(*partial_result) += (*boids[j])->velocity;
         }
       }
@@ -128,12 +140,27 @@ template<size_t n>
 void update_boid_positions(std::array<cown_ptr<Result>, n>& results, std::array<cown_ptr<Boid>, n>& boids) {
   for (size_t i = 0; i < n; ++i) {
     when(results[i], boids[i]) << [i](acquired_cown<Result> partial_result, acquired_cown<Boid> boid){
+      // This behaviour calculates the velocity update for a particular
+      // boid based on the global information
+
+      // Rule 1:
+      // calculate 'perceived' centre of mass (don't include self)
       std::get<0>(*partial_result) /= (n - 1);
+      // calculate the velocity required to move the boids 1/120 towards the centre of mass
+      // (an arbitrary number that made the motion looks smooth)
       std::get<0>(*partial_result) = (std::get<0>(*partial_result) - boid->position) / 120;
 
+      // Rule 2:
+      // Nothing to do as it was collected in the compute_partial step
+
+      // Rule 3:
+      // calculate the perceived velocity and add a fraction of it (1/8) to the boids
+      // velocity
       std::get<2>(*partial_result) /= (n - 1);
       std::get<2>(*partial_result) = (std::get<2>(*partial_result) - boid->velocity) / 8;
 
+      // Rule 4
+      // Try to return the boid to the center of the screen
       Vector& p = boid->position;
       Vector v4{0, 0};
 
@@ -149,6 +176,7 @@ void update_boid_positions(std::array<cown_ptr<Result>, n>& results, std::array<
         v4.y = -10;
       }
 
+      // compute the boids velocity and bound it within some upper limit if necessary
       Vector& v = boid->velocity;
       v += std::get<0>(*partial_result) + std::get<1>(*partial_result) + std::get<2>(*partial_result) + v4;
       if (v.abs() > vlim) {
