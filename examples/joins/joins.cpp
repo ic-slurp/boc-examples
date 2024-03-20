@@ -31,6 +31,11 @@ namespace Joins {
     // polymorphic cown_ptr
     vector<cown_ptr<unique_ptr<Observer>>> observers;
 
+    /*
+      capture the cown in the notify so that the message holds a strong
+      reference to the channel and the channel is not deallocated
+      before an observer can when on the channel and observe the state
+    */
     static void notify_all(acquired_cown<Channel<T>>& channel) {
       for (auto& observer : channel->observers) {
         when(observer) << [c=channel.cown()] (acquired_cown<unique_ptr<Observer>> observer) {
