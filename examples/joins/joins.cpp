@@ -149,7 +149,7 @@ namespace Joins {
     Pattern<Args..., M> And(cown_ptr<Channel<M>> channel) {
       return apply([channel=move(channel)](auto &&...args) mutable {
         return Pattern<Args..., M>(args..., move(channel));
-      }, channels);
+      }, move(channels));
     }
 
     using F = function<void(unique_ptr<Args>...)>;
@@ -214,15 +214,26 @@ namespace Joins {
     */
     auto put = make_cown<Channel<DataMessage<int>>>();
     auto get = make_cown<Channel<ReplyMessage<int>>>();
+    auto put_string = make_cown<Channel<DataMessage<string>>>();
 
     write(put, make_unique<DataMessage<int>>(make_unique<int>(20)));
     
     write(put, make_unique<DataMessage<int>>(make_unique<int>(51)));
 
+
+    write(put_string, make_unique<DataMessage<string>>(make_unique<string>("a string ")));
+
     /* send a repliable message on get */
     write(get, make_unique<ReplyMessage<int>>([](unique_ptr<int> msg) mutable {
         cout << *msg << " -- 1" << endl;
     }));
+
+    /* create a pattern so that if there is a message on put and get then reply to get */
+    Join::When(put).And(get).And(put_string).Do([](unique_ptr<DataMessage<int>> put, unique_ptr<ReplyMessage<int>> get, unique_ptr<DataMessage<string>> put_string) {
+      cout << **(put_string->data) << endl;
+      (*(get->reply))(move(*(put->data)));
+    });
+
 
     /* create a pattern so if there is a message on put then print it */
     Join::When(put).Do([](unique_ptr<DataMessage<int>> msg) {
@@ -239,6 +250,9 @@ namespace Joins {
     }));
 
     write(put, make_unique<DataMessage<int>>(make_unique<int>(409)));
+
+    write(put_string, make_unique<DataMessage<string>>(make_unique<string>("a string ")));
+
   }
 }
 
