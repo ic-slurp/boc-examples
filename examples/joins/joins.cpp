@@ -11,7 +11,11 @@ using namespace verona::cpp;
 
 using namespace std;
 
-// This is quite subtle and needs more designing
+/*
+  Note: this example currently leaks memory on shutdown.
+  There is a strong cown ref cycle between channels and patterns.
+  If we switch either to weak then we lose messages or patterns on shutdown.
+*/
 
 namespace Joins {
 
@@ -23,6 +27,12 @@ namespace Joins {
 
   template<typename T>
   struct Channel {
+    /* Channel has:
+        - a queue of data to be read
+        - a list of observers to notify whenever there is data
+       Observers subscribe to the channel and whenever
+       there is data they will be notified
+    */
     queue<unique_ptr<T>> data;
     // polymorphic cown_ptr
     vector<cown_ptr<unique_ptr<Observer>>> observers;
@@ -44,6 +54,7 @@ namespace Joins {
       if (data.size() > 0) {
         unique_ptr<T> front = move(data.front());
         data.pop();
+        if (data.size() > 0)
         notify_all();
         return front;
       }
@@ -66,6 +77,15 @@ namespace Joins {
 
   template<typename S, typename R>
   struct Message {
+    /*
+      A Message is a pair of:
+        - Data to place on a channel
+        - A callback to reply to (this is like a synchronous join)
+      Either of these can be empty
+
+      Note: ideally we could subclass this and make the message
+      types nicer but polymorphism in cown_ptr<> is fiddly
+    */
     optional<unique_ptr<S>> data;
 
     using F = function<void(unique_ptr<R>)>;
@@ -76,11 +96,26 @@ namespace Joins {
     Message(F reply): data(nullopt), reply(forward<F>(reply)) {};
   };
 
+  /* Data and Reply type aliases for convience */
   template<typename S>
   using DataMessage = Message<S, nullopt_t>;
 
   template<typename R>
   using ReplyMessage = Message<nullopt_t, R>;
+
+  /*
+    Pattern<N> consists of N channels
+    There two important functions for these structs:
+      - And : This continues building a pattern with one more channel
+      - Do  : Registers a pattern as an observer on the channels,
+              this takes a callback to run when there is data on
+              all the channels
+
+    The internal Pattern is the observer. When notified
+    the Pattern checks all channels to which it is subscribed
+    and if there is data on all of them, reads the data and
+    executes the callback.
+  */
 
   template<typename S1, typename R1, typename S2, typename R2>
     struct Pattern2 {
@@ -163,6 +198,10 @@ namespace Joins {
     }
   };
 
+  /*
+    Join starts of the construction of a pattern
+  */
+
   namespace Join {
     template<typename S, typename R>
     static Pattern1<S, R> When(cown_ptr<Channel<Message<S, R>>> channel) {
@@ -171,6 +210,11 @@ namespace Joins {
   };
 
   void run() {
+    /*
+      Builds a put and get channel:
+        - put channel contains messages with data
+        - get channel contains messages with replies
+    */
     auto put = make_cown<Channel<DataMessage<int>>>();
     auto get = make_cown<Channel<ReplyMessage<int>>>();
 
@@ -182,16 +226,19 @@ namespace Joins {
       put->write(make_unique<DataMessage<int>>(make_unique<int>(51)));
     };
 
+    /* send a repliable message on get */
     when(get) << [](acquired_cown<Channel<ReplyMessage<int>>> get){
       get->write(make_unique<ReplyMessage<int>>([](unique_ptr<int> msg) mutable {
         cout << *msg << " -- 1" << endl;
       }));
     };
 
+    /* create a pattern so if there is a message on put then print it */
     Join::When(put).Do([](unique_ptr<DataMessage<int>> msg) {
       cout << **(msg->data) << " -- 0" << endl;
     });
 
+    /* create a pattern so that if there is a message on put and get then reply to get */
     Join::When(put).And(get).Do([](unique_ptr<DataMessage<int>> put, unique_ptr<ReplyMessage<int>> get) {
       (*(get->reply))(move(*(put->data)));
     });
