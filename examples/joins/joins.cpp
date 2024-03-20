@@ -11,12 +11,6 @@ using namespace verona::cpp;
 
 using namespace std;
 
-/*
-  Note: this example currently leaks memory on shutdown.
-  There is a strong cown ref cycle between channels and patterns.
-  If we switch either to weak then we lose messages or patterns on shutdown.
-*/
-
 namespace Joins {
 
   struct Observer {
@@ -37,25 +31,32 @@ namespace Joins {
     // polymorphic cown_ptr
     vector<cown_ptr<unique_ptr<Observer>>> observers;
 
-    void notify_all() {
-      for (auto& observer : observers) {
-        when(observer) << [] (acquired_cown<unique_ptr<Observer>> observer) {
+    static void notify_all(acquired_cown<Channel<T>>& channel) {
+      for (auto& observer : channel->observers) {
+        when(observer) << [c=channel.cown()] (acquired_cown<unique_ptr<Observer>> observer) {
+          assert(c);
           (*observer)->notify();
         };
       }
     }
 
-    void write(unique_ptr<T> value) {
-      data.push(move(value));
-      notify_all();
+    static void write(acquired_cown<Channel<T>>& channel, unique_ptr<T> value) {
+      channel->data.push(move(value));
+      Channel<T>::notify_all(channel);
     }
 
-    unique_ptr<T> read() {
-      if (data.size() > 0) {
-        unique_ptr<T> front = move(data.front());
-        data.pop();
-        if (data.size() > 0)
-        notify_all();
+    static void write(cown_ptr<Channel<T>> channel, unique_ptr<T> value) {
+      when(channel) << [value=move(value)] (acquired_cown<Channel<T>> channel) mutable {
+        Channel<T>::write(channel, move(value));
+      };
+    }
+
+    static unique_ptr<T> read(acquired_cown<Channel<T>>& channel) {
+      if (channel->data.size() > 0) {
+        unique_ptr<T> front = move(channel->data.front());
+        channel->data.pop();
+        if (channel->data.size() > 0)
+          Channel<T>::notify_all(channel);
         return front;
       }
       return nullptr;
@@ -65,15 +66,36 @@ namespace Joins {
       return data.size() != 0;
     }
 
-    void subscribe(cown_ptr<unique_ptr<Observer>> observer) {
-      observers.push_back(observer);
-      if (data.size() > 0) {
-        when(observer) << [] (acquired_cown<unique_ptr<Observer>> observer) {
+    static void subscribe(acquired_cown<Channel<T>>& channel, cown_ptr<unique_ptr<Observer>> observer) {
+      channel->observers.push_back(observer);
+      if (channel->data.size() > 0) {
+        when(move(observer)) << [c=channel.cown()] (acquired_cown<unique_ptr<Observer>> observer) {
+          assert(c);
           (*observer)->notify();
         };
       }
     }
   };
+
+  template <typename T>
+  static unique_ptr<T> read(acquired_cown<Channel<T>>& channel) {
+    return Channel<T>::read(channel);
+  }
+
+  template <typename T>
+  static void write(acquired_cown<Channel<T>>& channel, unique_ptr<T> value) {
+    Channel<T>::write(channel, move(value));
+  }
+
+  template <typename T>
+  static void write(cown_ptr<Channel<T>> channel, unique_ptr<T> value) {
+    Channel<T>::write(move(channel), move(value));
+  }
+
+  template <typename T>
+  static void subscribe(acquired_cown<Channel<T>>& channel, cown_ptr<unique_ptr<Observer>> observer) {
+    Channel<T>::subscribe(channel, move(observer));
+  }
 
   template<typename S, typename R>
   struct Message {
@@ -129,25 +151,34 @@ namespace Joins {
       using F = function<void(unique_ptr<Message<S1, R1>>, unique_ptr<Message<S2, R2>>)>;
 
       struct Pattern : public Observer {
-        cown_ptr<Channel<Message<S1, R1>>> channel1;
-        cown_ptr<Channel<Message<S2, R2>>> channel2;
+        typename cown_ptr<Channel<Message<S1, R1>>>::weak channel1;
+        typename cown_ptr<Channel<Message<S2, R2>>>::weak channel2;
         F f;
 
         Pattern(cown_ptr<Channel<Message<S1, R1>>> channel1,
                 cown_ptr<Channel<Message<S2, R2>>> channel2,
-                F f): channel1(channel1), channel2(channel2), f(forward<F>(f)) {}
+                F f): channel1(move(channel1.get_weak())), channel2(move(channel2.get_weak())), f(forward<F>(f)) {}
       
         void notify() {
-          when(channel1, channel2) << [f=f](acquired_cown<Channel<Message<S1, R1>>> channel1, acquired_cown<Channel<Message<S2, R2>>> channel2) {
-          if (!channel1->has_data() || !channel2->has_data())
+          auto c1 = channel1.promote();
+          auto c2 = channel2.promote();
+
+          /* If either c1 or c2 has been deallocated then this 
+             pattern can no longer match
+           */
+          if (!c1 || !c2)
             return;
 
-          unique_ptr<Message<S1, R1>> msg1 = channel1->read();
-          unique_ptr<Message<S2, R2>> msg2 = channel2->read();
+          when(c1, c2) << [f=f](acquired_cown<Channel<Message<S1, R1>>> channel1, acquired_cown<Channel<Message<S2, R2>>> channel2) {
+            if (!channel1->has_data() || !channel2->has_data())
+              return;
 
-          assert(msg1 && msg2);
+            unique_ptr<Message<S1, R1>> msg1 = read(channel1);
+            unique_ptr<Message<S2, R2>> msg2 = read(channel2);
 
-          f(move(msg1), move(msg2));
+            assert(msg1 && msg2);
+
+            f(move(msg1), move(msg2));
           };
         }
       };
@@ -155,8 +186,8 @@ namespace Joins {
       void Do(F run) {
         auto pattern = make_cown<unique_ptr<Observer>>(make_unique<Pattern>(channel1, channel2, forward<F>(run)));
         when(channel1, channel2) << [pattern=pattern](acquired_cown<Channel<Message<S1, R1>>> channel1, acquired_cown<Channel<Message<S2, R2>>> channel2){
-          channel1->subscribe(pattern);
-          channel2->subscribe(pattern);
+          subscribe(channel1, pattern);
+          subscribe(channel2, pattern);
         };
       }
     };
@@ -175,14 +206,16 @@ namespace Joins {
     using F = function<void(unique_ptr<Message<S, R>>)>;
 
     struct Pattern : public Observer {
-      cown_ptr<Channel<Message<S, R>>> channel;
+      typename cown_ptr<Channel<Message<S, R>>>::weak channel;
       F f;
 
-      Pattern(cown_ptr<Channel<Message<S, R>>> channel, F f): channel(channel), f(forward<F>(f)) {}
+      Pattern(cown_ptr<Channel<Message<S, R>>> channel, F f): channel(move(channel.get_weak())), f(forward<F>(f)) {}
     
       void notify() {
-        when(channel) << [f=f](acquired_cown<Channel<Message<S, R>>> channel) {
-          unique_ptr<Message<S, R>> msg = channel->read();
+        auto c = channel.promote();
+        assert(c);
+        when(c) << [f=f](acquired_cown<Channel<Message<S, R>>> channel) {
+          unique_ptr<Message<S, R>> msg = read(channel);
           // if there was a value, call the callback
           if (msg) f(move(msg));
           // otherwise something must have taken it
@@ -193,7 +226,7 @@ namespace Joins {
     void Do(F run) {
       auto pattern = make_cown<unique_ptr<Observer>>(make_unique<Pattern>(channel, forward<F>(run)));
       when(channel) << [pattern=pattern](acquired_cown<Channel<Message<S, R>>> channel){
-        channel->subscribe(pattern);
+        subscribe(channel, pattern);
       };
     }
   };
@@ -218,20 +251,14 @@ namespace Joins {
     auto put = make_cown<Channel<DataMessage<int>>>();
     auto get = make_cown<Channel<ReplyMessage<int>>>();
 
-    when(put) << [](acquired_cown<Channel<DataMessage<int>>> put){
-      put->write(make_unique<DataMessage<int>>(make_unique<int>(20)));
-    };
+    write(put, make_unique<DataMessage<int>>(make_unique<int>(20)));
     
-    when(put) << [](acquired_cown<Channel<DataMessage<int>>> put){
-      put->write(make_unique<DataMessage<int>>(make_unique<int>(51)));
-    };
+    write(put, make_unique<DataMessage<int>>(make_unique<int>(51)));
 
     /* send a repliable message on get */
-    when(get) << [](acquired_cown<Channel<ReplyMessage<int>>> get){
-      get->write(make_unique<ReplyMessage<int>>([](unique_ptr<int> msg) mutable {
+    write(get, make_unique<ReplyMessage<int>>([](unique_ptr<int> msg) mutable {
         cout << *msg << " -- 1" << endl;
-      }));
-    };
+    }));
 
     /* create a pattern so if there is a message on put then print it */
     Join::When(put).Do([](unique_ptr<DataMessage<int>> msg) {
@@ -243,15 +270,11 @@ namespace Joins {
       (*(get->reply))(move(*(put->data)));
     });
 
-    when(get) << [](acquired_cown<Channel<ReplyMessage<int>>> get){
-      get->write(make_unique<ReplyMessage<int>>([](unique_ptr<int> msg) mutable {
+    write(get, make_unique<ReplyMessage<int>>([](unique_ptr<int> msg) mutable {
         cout << *msg << " -- 2" << endl;
-      }));
-    };
+    }));
 
-    when(put) << [](acquired_cown<Channel<DataMessage<int>>> put){
-      put->write(make_unique<DataMessage<int>>(make_unique<int>(409)));
-    };
+    write(put, make_unique<DataMessage<int>>(make_unique<int>(409)));
   }
 }
 
