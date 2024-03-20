@@ -138,107 +138,71 @@ namespace Joins {
     and if there is data on all of them, reads the data and
     executes the callback.
   */
+  template<typename ...Args>
+  struct Pattern {
 
-  template<typename S1, typename R1, typename S2, typename R2>
-    struct Pattern2 {
-      cown_ptr<Channel<Message<S1, R1>>> channel1;
-      cown_ptr<Channel<Message<S2, R2>>> channel2;
+    tuple<cown_ptr<Channel<Args>>...> channels;
 
-      Pattern2(cown_ptr<Channel<Message<S1, R1>>> channel1,
-               cown_ptr<Channel<Message<S2, R2>>> channel2): 
-               channel1(channel1), channel2(channel2) {}
+    Pattern(cown_ptr<Channel<Args>>... channels): channels(channels...) {}
 
-      using F = function<void(unique_ptr<Message<S1, R1>>, unique_ptr<Message<S2, R2>>)>;
-
-      struct Pattern : public Observer {
-        typename cown_ptr<Channel<Message<S1, R1>>>::weak channel1;
-        typename cown_ptr<Channel<Message<S2, R2>>>::weak channel2;
-        F f;
-
-        Pattern(cown_ptr<Channel<Message<S1, R1>>> channel1,
-                cown_ptr<Channel<Message<S2, R2>>> channel2,
-                F f): channel1(move(channel1.get_weak())), channel2(move(channel2.get_weak())), f(forward<F>(f)) {}
-      
-        void notify() {
-          auto c1 = channel1.promote();
-          auto c2 = channel2.promote();
-
-          /* If either c1 or c2 has been deallocated then this 
-             pattern can no longer match
-           */
-          if (!c1 || !c2)
-            return;
-
-          when(c1, c2) << [f=f](acquired_cown<Channel<Message<S1, R1>>> channel1, acquired_cown<Channel<Message<S2, R2>>> channel2) {
-            if (!channel1->has_data() || !channel2->has_data())
-              return;
-
-            unique_ptr<Message<S1, R1>> msg1 = read(channel1);
-            unique_ptr<Message<S2, R2>> msg2 = read(channel2);
-
-            assert(msg1 && msg2);
-
-            f(move(msg1), move(msg2));
-          };
-        }
-      };
-
-      void Do(F run) {
-        auto pattern = make_cown<unique_ptr<Observer>>(make_unique<Pattern>(channel1, channel2, forward<F>(run)));
-        when(channel1, channel2) << [pattern=pattern](acquired_cown<Channel<Message<S1, R1>>> channel1, acquired_cown<Channel<Message<S2, R2>>> channel2){
-          subscribe(channel1, pattern);
-          subscribe(channel2, pattern);
-        };
-      }
-    };
-
-  template<typename S, typename R>
-  struct Pattern1 {
-    cown_ptr<Channel<Message<S, R>>> channel;
-
-    Pattern1(cown_ptr<Channel<Message<S, R>>> channel): channel(channel) {}
-
-    template<typename S2, typename R2>
-    Pattern2<S, R, S2, R2> And(cown_ptr<Channel<Message<S2, R2>>> channel2) {
-      return Pattern2(channel, channel2);
+    template<typename M>
+    Pattern<Args..., M> And(cown_ptr<Channel<M>> channel) {
+      return apply([channel=move(channel)](auto &&...args) mutable {
+        return Pattern<Args..., M>(args..., move(channel));
+      }, channels);
     }
 
-    using F = function<void(unique_ptr<Message<S, R>>)>;
+    using F = function<void(unique_ptr<Args>...)>;
 
-    struct Pattern : public Observer {
-      typename cown_ptr<Channel<Message<S, R>>>::weak channel;
+    struct P : public Observer {
+      tuple<typename cown_ptr<Channel<Args>>::weak...> channels;
       F f;
 
-      Pattern(cown_ptr<Channel<Message<S, R>>> channel, F f): channel(move(channel.get_weak())), f(forward<F>(f)) {}
+      P(F f, cown_ptr<Channel<Args>>... channels): f(forward<F>(f)), channels(channels.get_weak()...) {}
     
       void notify() {
-        auto c = channel.promote();
-        assert(c);
-        when(c) << [f=f](acquired_cown<Channel<Message<S, R>>> channel) {
-          unique_ptr<Message<S, R>> msg = read(channel);
-          // if there was a value, call the callback
-          if (msg) f(move(msg));
-          // otherwise something must have taken it
-        };
+        /* promote all channels to strong refs */
+        tuple<cown_ptr<Channel<Args>>...> cs = apply([](auto &&...args) mutable {
+          return make_tuple<cown_ptr<Channel<Args>>...>(move(args.promote())...);
+        }, channels);
+
+        /* If any cown can't be promoted it is because the channel has been deallocated
+           thus the pattern can no longer match */
+        if(apply([](auto &&...args) mutable { return (!args || ...) ; }, cs))
+          return;
+
+        /* Otherwise, attempt to read a value from all channels and call the pattern callback */
+        apply([f=f](auto &&... args) mutable {
+          when(args...) << [f=forward<F>(f)](acquired_cown<Channel<Args>>... channels) mutable {
+            if ((!channels->has_data() || ...))
+              return;
+            f(read(channels)...);
+          };
+        }, move(cs));
       }
     };
 
     void Do(F run) {
-      auto pattern = make_cown<unique_ptr<Observer>>(make_unique<Pattern>(channel, forward<F>(run)));
-      when(channel) << [pattern=pattern](acquired_cown<Channel<Message<S, R>>> channel){
-        subscribe(channel, pattern);
-      };
+      auto pattern = make_cown<unique_ptr<Observer>>(
+        apply([run=forward<F>(run)](auto &&...args) mutable {
+          return make_unique<P>(forward<F>(run), args...);
+        }, channels));
+
+        apply([pattern=move(pattern)](auto &&...args) mutable {
+          when(args...) << [pattern=move(pattern)](acquired_cown<Channel<Args>>... channels) mutable {
+            (subscribe(channels, pattern), ...);
+          };
+        }, move(channels));
     }
   };
 
   /*
     Join starts of the construction of a pattern
   */
-
   namespace Join {
-    template<typename S, typename R>
-    static Pattern1<S, R> When(cown_ptr<Channel<Message<S, R>>> channel) {
-      return Pattern1<S, R>(channel);
+    template<typename M>
+    static Pattern<M> When(cown_ptr<Channel<M>> channel) {
+      return Pattern<M>(channel);
     }
   };
 
